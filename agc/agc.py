@@ -104,7 +104,7 @@ def dereplication_fulllength(amplicon_file: Path, minseqlen: int, mincount: int)
     for sequence in read_fasta(amplicon_file, minseqlen):
         sequence_counts[sequence] += 1
 
-    # Filtrer les séquences avec une occurrence >= mincount en utilisant une liste de compréhension
+    # Yield sequences with a count >= mincount using a list comprehension
     return ([sequence, count] for sequence, count in sequence_counts.items() if count >= mincount)
 
 
@@ -115,20 +115,34 @@ def get_identity(alignment_list: List[str]) -> float:
     :param alignment_list:  (list) A list of aligned sequences in the format ["SE-QUENCE1", "SE-QUENCE2"]
     :return: (float) The rate of identity between the two sequences.
     """
-    pass
+    seq1, seq2 = alignment_list
+    identical_nucleotides = sum(1 for a, b in zip(seq1, seq2) if a == b)
+    alignment_length = len(seq1)
+    return float((identical_nucleotides / alignment_length) * 100)
 
-def abundance_greedy_clustering(amplicon_file: Path, minseqlen: int, mincount: int, chunk_size: int, kmer_size: int) -> List:
-    """Compute an abundance greedy clustering regarding sequence count and identity.
-    Identify OTU sequences.
+def abundance_greedy_clustering(amplicon_file: Path, minseqlen: int, mincount: int, chunk_size: int = 0, kmer_size: int = 0) -> List:
+    """Perform abundance greedy clustering to identify OTU sequences based on sequence count and identity.
 
-    :param amplicon_file: (Path) Path to the amplicon file in FASTA.gz format.
-    :param minseqlen: (int) Minimum amplicon sequence length.
-    :param mincount: (int) Minimum amplicon count.
-    :param chunk_size: (int) A fournir mais non utilise cette annee
-    :param kmer_size: (int) A fournir mais non utilise cette annee
-    :return: (list) A list of all the [OTU (str), count (int)] .
+    :param amplicon_file: Path to the amplicon file in FASTA.gz format.
+    :param minseqlen: Minimum amplicon sequence length.
+    :param mincount: Minimum sequence count for dereplication.
+    :param chunk_size: Not used this year, set to 0.
+    :param kmer_size: Not used this year, set to 0.
+    :return: A list of all the OTUs in the format [[sequence, count], ...].
     """
-    pass
+    otu_list = []
+    # Iterate over sequences and their counts from dereplication_fulllength
+    for sequence, count in dereplication_fulllength(amplicon_file, minseqlen, mincount):
+        # Check if the sequence is more than 97% similar to any existing OTU
+        is_similar = any(
+            get_identity(nw.global_align(sequence, otu, gap_open=-1, gap_extend=-1,
+                                         matrix=str(Path(__file__).parent / "MATCH"))) > 97
+            for otu, _ in otu_list
+        )
+        # If the sequence is not similar, add it as a new OTU
+        if not is_similar:
+            otu_list.append([sequence, count])
+    return otu_list
 
 
 def write_OTU(OTU_list: List, output_file: Path) -> None:
@@ -137,7 +151,11 @@ def write_OTU(OTU_list: List, output_file: Path) -> None:
     :param OTU_list: (list) A list of OTU sequences
     :param output_file: (Path) Path to the output file
     """
-    pass
+    with output_file.open("w") as f:
+        f.writelines(
+            [f">OTU_{index + 1} occurrence:{count}\n{textwrap.fill(sequence, width=80)}\n"
+             for index, (sequence, count) in enumerate(OTU_list)]
+        )
 
 
 #==============================================================
