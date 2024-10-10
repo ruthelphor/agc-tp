@@ -1,0 +1,15 @@
+name: agc_tp
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.9
+  - numpy
+  - nwalign3
+  - pip
+  - pip:
+      - pytest
+      - pytest-cov
+      - pylint
+
