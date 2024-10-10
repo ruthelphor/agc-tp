@@ -84,10 +84,16 @@ def read_fasta(amplicon_file: Path, minseqlen: int) -> Iterator[str]:
     :return: A generator object that provides the Fasta sequences (str).
     """
     with gzip.open(amplicon_file, "rt") as file:
-        sequences = [
-            line.strip() for line in file if not line.startswith(">") and len(line.strip()) >= minseqlen
-        ]
-        for sequence in sequences:
+        sequence = ""
+        for line in file:
+            if line.startswith(">"):
+                if len(sequence) >= minseqlen:
+                    yield sequence
+                sequence = ""  # Réinitialiser pour la prochaine séquence
+            else:
+                sequence += line.strip()
+        # Vérifier la dernière séquence
+        if len(sequence) >= minseqlen:
             yield sequence
 
 
@@ -99,14 +105,13 @@ def dereplication_fulllength(amplicon_file: Path, minseqlen: int, mincount: int)
     :param mincount: (int) Minimum amplicon count
     :return: A generator object that provides a (list)[sequences, count] of sequence with a count >= mincount and a length >= minseqlen.
     """
-    sequence_counts = Counter()
-    # Count occurrences of each sequence
-    for sequence in read_fasta(amplicon_file, minseqlen):
-        sequence_counts[sequence] += 1
-
-    # Yield sequences with a count >= mincount using a list comprehension
-    return ([sequence, count] for sequence, count in sequence_counts.items() if count >= mincount)
-
+    sequence_counts = Counter(read_fasta(amplicon_file, minseqlen))
+    # Trier les séquences par ordre décroissant d'occurrence
+    sorted_sequences = sorted(sequence_counts.items(), key=lambda x: x[1], reverse=True)
+    # Générer les séquences avec une occurrence >= mincount
+    for sequence, count in sorted_sequences:
+        if count >= mincount:
+            yield [sequence, count]
 
 
 def get_identity(alignment_list: List[str]) -> float:
@@ -131,17 +136,17 @@ def abundance_greedy_clustering(amplicon_file: Path, minseqlen: int, mincount: i
     :return: A list of all the OTUs in the format [[sequence, count], ...].
     """
     otu_list = []
-    # Iterate over sequences and their counts from dereplication_fulllength
     for sequence, count in dereplication_fulllength(amplicon_file, minseqlen, mincount):
-        # Check if the sequence is more than 97% similar to any existing OTU
         is_similar = any(
-            get_identity(nw.global_align(sequence, otu, gap_open=-1, gap_extend=-1,
+            get_identity(nw.global_align(sequence, otu, gap_open=-1, gap_extend=-1, 
                                          matrix=str(Path(__file__).parent / "MATCH"))) > 97
             for otu, _ in otu_list
         )
-        # If the sequence is not similar, add it as a new OTU
         if not is_similar:
             otu_list.append([sequence, count])
+    # S'assurer qu'au moins un OTU est trouvé
+    if not otu_list:
+        raise ValueError("No OTUs identified. Check the input data or parameters.")
     return otu_list
 
 
@@ -167,7 +172,15 @@ def main(): # pragma: no cover
     """
     # Get arguments
     args = get_arguments()
-    # Votre programme ici
+    # Perform abundance greedy clustering
+    otu_list = abundance_greedy_clustering(
+        amplicon_file=args.amplicon_file,
+        minseqlen=args.minseqlen,
+        mincount=args.mincount,
+    )
+
+    # Write the OTU list to the output file
+    write_OTU(otu_list, args.output_file)
 
 
 

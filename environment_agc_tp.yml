@@ -5,8 +5,9 @@ channels:
   - defaults
 dependencies:
   - python=3.9
-  - numpy
+  - numpy=1.19.5
   - nwalign3
+  - vsearch
   - pip
   - pip:
       - pytest
